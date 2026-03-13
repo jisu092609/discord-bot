@@ -27,7 +27,7 @@ const NORMAL_COMMAND_CHANNEL = "1480609696238010378";
 const COMP_WAIT = "1461898802007900281";
 const NORMAL_WAIT = "1461898864012296260";
 
-// 경쟁방 (모든 경쟁 / 빡겜 매칭 이동)
+// 경쟁방
 const COMP_ROOMS = [
   "1462174271932465355",
   "1462174312134869193",
@@ -50,7 +50,6 @@ const NORMAL_ROOMS = [
 ];
 
 let compQueue = [];
-let hardQueue = [];
 let normalQueue = [];
 
 client.once("ready", () => {
@@ -80,23 +79,6 @@ client.on("messageCreate", async message => {
       startMatch(message.guild, compQueue, COMP_ROOMS);
   }
 
-  // 빡겜대기
-  if (message.channel.id === COMP_COMMAND_CHANNEL && message.content === "!빡겜대기") {
-
-    if (!member.voice.channel || member.voice.channel.id !== COMP_WAIT)
-      return message.reply("경쟁대기 음성채널에 있어야 합니다.");
-
-    if (hardQueue.includes(member.id))
-      return message.reply("이미 빡겜 대기열에 있습니다.");
-
-    hardQueue.push(member.id);
-
-    message.reply(`빡겜 대기열 (${hardQueue.length}/4)`);
-
-    if (hardQueue.length === 4)
-      startMatch(message.guild, hardQueue, COMP_ROOMS);
-  }
-
   // 일반대기
   if (message.channel.id === NORMAL_COMMAND_CHANNEL && message.content === "!일반대기") {
 
@@ -120,11 +102,8 @@ client.on("voiceStateUpdate", (oldState, newState) => {
 
   if (oldState.channelId === COMP_WAIT && newState.channelId !== COMP_WAIT) {
 
-    const index1 = compQueue.indexOf(oldState.id);
-    if (index1 !== -1) compQueue.splice(index1, 1);
-
-    const index2 = hardQueue.indexOf(oldState.id);
-    if (index2 !== -1) hardQueue.splice(index2, 1);
+    const index = compQueue.indexOf(oldState.id);
+    if (index !== -1) compQueue.splice(index, 1);
   }
 
   if (oldState.channelId === NORMAL_WAIT && newState.channelId !== NORMAL_WAIT) {
