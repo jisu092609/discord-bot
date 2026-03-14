@@ -1,33 +1,30 @@
-const { Client, GatewayIntentBits } = require("discord.js");
-const express = require("express");
+const {
+  Client,
+  GatewayIntentBits,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
+} = require("discord.js");
 
+const express = require("express");
+const fs = require("fs");
 const app = express();
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.GuildVoiceStates
   ]
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
 
-if (!TOKEN) {
-  console.error("DISCORD_TOKEN 환경변수가 없습니다.");
-  process.exit(1);
-}
-
-// 명령어 채널
-const COMP_COMMAND_CHANNEL = "1482370321032937584";
-const NORMAL_COMMAND_CHANNEL = "1482370350661501008";
-
-// 대기방
+const MATCH_CHANNEL = "1482370321032937584";
 const COMP_WAIT = "1461898802007900281";
-const NORMAL_WAIT = "1461898864012296260";
 
-// 경쟁방
+const MESSAGE_FILE = "./queueMessage.json";
+
 const COMP_ROOMS = [
   "1462174271932465355",
   "1462174312134869193",
@@ -42,81 +39,214 @@ const COMP_ROOMS = [
   "1475237217499877631"
 ];
 
-// 일반방
-const NORMAL_ROOMS = [
-  "1461897962463432927",
-  "1461898016515690566",
-  "1461898047624581171"
-];
-
 let compQueue = [];
-let normalQueue = [];
+let queueMessage = null;
 
-client.once("ready", () => {
+const buttons = new ActionRowBuilder().addComponents(
+  new ButtonBuilder()
+    .setCustomId("join_comp")
+    .setLabel("🎮 경쟁 참가")
+    .setStyle(ButtonStyle.Success),
+
+  new ButtonBuilder()
+    .setCustomId("leave_comp")
+    .setLabel("❌ 대기 취소")
+    .setStyle(ButtonStyle.Danger)
+);
+
+client.once("ready", async () => {
+
   console.log(`봇 로그인 완료: ${client.user.tag}`);
+
+  const channel = await client.channels.fetch(MATCH_CHANNEL);
+
+  let messageId = null;
+
+  if (fs.existsSync(MESSAGE_FILE)) {
+
+    const data = JSON.parse(fs.readFileSync(MESSAGE_FILE));
+    messageId = data.messageId;
+
+  }
+
+  try {
+
+    if (messageId) {
+
+      queueMessage = await channel.messages.fetch(messageId);
+      console.log("기존 매칭 UI 불러옴");
+
+    }
+
+  } catch {
+
+    console.log("기존 UI 없음");
+
+  }
+
+  if (!queueMessage) {
+
+    const embed = await createQueueEmbed(compQueue, channel.guild);
+
+    queueMessage = await channel.send({
+      embeds: [embed],
+      components: [buttons]
+    });
+
+    fs.writeFileSync(
+      MESSAGE_FILE,
+      JSON.stringify({ messageId: queueMessage.id })
+    );
+
+    console.log("새 매칭 UI 생성");
+
+  }
+
 });
 
-client.on("messageCreate", async message => {
+async function createQueueEmbed(queue, guild) {
 
-  if (message.author.bot) return;
+  let list = "";
+  const icons = ["🥇", "🥈", "🥉", "🏅"];
 
-  const member = message.member;
+  for (let i = 0; i < 4; i++) {
 
-  // 경쟁대기
-  if (message.channel.id === COMP_COMMAND_CHANNEL && message.content === "!경쟁대기") {
+    if (queue[i]) {
 
-    if (!member.voice.channel || member.voice.channel.id !== COMP_WAIT)
-      return message.reply("경쟁대기 음성채널에 있어야 합니다.");
+      try {
 
-    if (compQueue.includes(member.id))
-      return message.reply("이미 경쟁 대기열에 있습니다.");
+        const member = await guild.members.fetch(queue[i]);
+        list += `${icons[i]} ${member.displayName}\n`;
+
+      } catch {
+
+        list += `${icons[i]} Unknown\n`;
+
+      }
+
+    } else {
+
+      list += `⬜ 대기중\n`;
+
+    }
+
+  }
+
+  const filled = "█".repeat(queue.length * 2);
+  const empty = "░".repeat(8 - queue.length * 2);
+  const bar = filled + empty;
+
+  return new EmbedBuilder()
+    .setTitle("🎮 경쟁 매칭")
+    .setColor(0x5865F2)
+    .setDescription(`대기 인원 **${queue.length} / 4**\n${bar}`)
+    .addFields({
+      name: "대기열",
+      value: "```" + list + "```"
+    });
+
+}
+
+async function updateQueueUI(guild) {
+
+  if (!queueMessage) return;
+
+  const embed = await createQueueEmbed(compQueue, guild);
+
+  await queueMessage.edit({
+    embeds: [embed],
+    components: [buttons]
+  });
+
+}
+
+client.on("interactionCreate", async interaction => {
+
+  if (!interaction.isButton()) return;
+
+  const member = interaction.member;
+
+  if (interaction.customId === "join_comp") {
+
+    if (!member.voice.channel || member.voice.channel.id !== COMP_WAIT) {
+
+      return interaction.reply({
+        content: "❌ 경쟁대기 음성채널에 들어가 있어야 합니다.",
+        ephemeral: true
+      });
+
+    }
+
+    if (compQueue.includes(member.id)) {
+
+      return interaction.reply({
+        content: "이미 대기열에 있습니다.",
+        ephemeral: true
+      });
+
+    }
 
     compQueue.push(member.id);
 
-    message.reply(`경쟁 대기열 (${compQueue.length}/4)`);
+    await interaction.reply({
+      content: "🎮 경쟁 대기열에 참가했습니다.",
+      ephemeral: true
+    });
 
-    if (compQueue.length === 4)
-      startMatch(message.guild, compQueue, COMP_ROOMS);
+    await updateQueueUI(interaction.guild);
+
+    if (compQueue.length === 4) {
+      startMatch(interaction.guild);
+    }
+
   }
 
-  // 일반대기
-  if (message.channel.id === NORMAL_COMMAND_CHANNEL && message.content === "!일반대기") {
+  if (interaction.customId === "leave_comp") {
 
-    if (!member.voice.channel || member.voice.channel.id !== NORMAL_WAIT)
-      return message.reply("일반대기 음성채널에 있어야 합니다.");
+    const index = compQueue.indexOf(member.id);
 
-    if (normalQueue.includes(member.id))
-      return message.reply("이미 일반 대기열에 있습니다.");
+    if (index === -1) {
 
-    normalQueue.push(member.id);
+      return interaction.reply({
+        content: "대기열에 없습니다.",
+        ephemeral: true
+      });
 
-    message.reply(`일반 대기열 (${normalQueue.length}/4)`);
+    }
 
-    if (normalQueue.length === 4)
-      startMatch(message.guild, normalQueue, NORMAL_ROOMS);
+    compQueue.splice(index, 1);
+
+    await interaction.reply({
+      content: "대기열에서 제거되었습니다.",
+      ephemeral: true
+    });
+
+    await updateQueueUI(interaction.guild);
+
   }
 
 });
 
-client.on("voiceStateUpdate", (oldState, newState) => {
+client.on("voiceStateUpdate", async (oldState, newState) => {
 
   if (oldState.channelId === COMP_WAIT && newState.channelId !== COMP_WAIT) {
 
     const index = compQueue.indexOf(oldState.id);
-    if (index !== -1) compQueue.splice(index, 1);
-  }
 
-  if (oldState.channelId === NORMAL_WAIT && newState.channelId !== NORMAL_WAIT) {
+    if (index !== -1) {
 
-    const index = normalQueue.indexOf(oldState.id);
-    if (index !== -1) normalQueue.splice(index, 1);
+      compQueue.splice(index, 1);
+      await updateQueueUI(oldState.guild);
+
+    }
+
   }
 
 });
 
-async function startMatch(guild, queue, rooms) {
+async function startMatch(guild) {
 
-  const available = rooms.find(id => {
+  const available = COMP_ROOMS.find(id => {
 
     const channel = guild.channels.cache.get(id);
     return channel && channel.members.size === 0;
@@ -125,32 +255,34 @@ async function startMatch(guild, queue, rooms) {
 
   if (!available) {
 
-    console.log("사용 가능한 방 없음");
-    queue.length = 0;
+    console.log("사용 가능한 경쟁방 없음");
+    compQueue = [];
+    updateQueueUI(guild);
     return;
 
   }
 
   const room = guild.channels.cache.get(available);
 
-  for (const id of queue) {
+  for (const id of compQueue) {
 
     const member = await guild.members.fetch(id);
 
-    if (member.voice.channel)
+    if (member.voice.channel) {
       member.voice.setChannel(room);
+    }
 
   }
 
-  queue.length = 0;
-
   console.log("매칭 완료");
+
+  compQueue = [];
+
+  updateQueueUI(guild);
 
 }
 
-client.login(TOKEN).catch(err => {
-  console.error("봇 로그인 실패:", err);
-});
+client.login(TOKEN);
 
 app.get("/", (req, res) => {
   res.send("Bot is alive");
@@ -160,12 +292,4 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`Ping server running on port ${PORT}`);
-});
-
-process.on("unhandledRejection", error => {
-  console.error("Unhandled promise rejection:", error);
-});
-
-process.on("uncaughtException", error => {
-  console.error("Uncaught exception:", error);
 });
