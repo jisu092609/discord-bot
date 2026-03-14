@@ -20,12 +20,20 @@ const client = new Client({
 
 const TOKEN = process.env.DISCORD_TOKEN;
 
-const MATCH_CHANNEL = "1482370321032937584";
+/* 채널 ID */
+
+const COMP_MATCH_CHANNEL = "경쟁매칭채널ID";
+const NORMAL_MATCH_CHANNEL = "일반매칭채널ID";
 
 const COMP_WAIT = "1461898802007900281";
 const NORMAL_WAIT = "1461898864012296260";
 
-const MESSAGE_FILE = "./queueMessage.json";
+/* 메시지 저장 */
+
+const COMP_MESSAGE_FILE = "./compMessage.json";
+const NORMAL_MESSAGE_FILE = "./normalMessage.json";
+
+/* 경쟁방 */
 
 const COMP_ROOMS = [
   "1462174271932465355",
@@ -41,22 +49,37 @@ const COMP_ROOMS = [
   "1475237217499877631"
 ];
 
+/* 일반방 */
+
 const NORMAL_ROOMS = [
   "1461897962463432927",
   "1461898016515690566",
   "1461898047624581171"
 ];
 
+/* 대기열 */
+
 let compQueue = [];
 let normalQueue = [];
-let queueMessage = null;
 
-const buttons = new ActionRowBuilder().addComponents(
+let compMessage = null;
+let normalMessage = null;
+
+/* 버튼 */
+
+const compButtons = new ActionRowBuilder().addComponents(
   new ButtonBuilder()
     .setCustomId("join_comp")
     .setLabel("🎮 경쟁 참가")
     .setStyle(ButtonStyle.Success),
 
+  new ButtonBuilder()
+    .setCustomId("leave_queue")
+    .setLabel("❌ 대기 취소")
+    .setStyle(ButtonStyle.Danger)
+);
+
+const normalButtons = new ActionRowBuilder().addComponents(
   new ButtonBuilder()
     .setCustomId("join_normal")
     .setLabel("🎯 일반 참가")
@@ -68,100 +91,140 @@ const buttons = new ActionRowBuilder().addComponents(
     .setStyle(ButtonStyle.Danger)
 );
 
+/* 봇 시작 */
+
 client.once("ready", async () => {
 
   console.log(`봇 로그인 완료: ${client.user.tag}`);
 
-  const channel = await client.channels.fetch(MATCH_CHANNEL);
+  const compChannel = await client.channels.fetch(COMP_MATCH_CHANNEL);
+  const normalChannel = await client.channels.fetch(NORMAL_MATCH_CHANNEL);
 
-  let messageId = null;
+  /* 경쟁 UI */
 
-  if (fs.existsSync(MESSAGE_FILE)) {
-    const data = JSON.parse(fs.readFileSync(MESSAGE_FILE));
-    messageId = data.messageId;
+  if (fs.existsSync(COMP_MESSAGE_FILE)) {
+
+    try {
+      const data = JSON.parse(fs.readFileSync(COMP_MESSAGE_FILE));
+      compMessage = await compChannel.messages.fetch(data.messageId);
+    } catch {}
   }
 
-  try {
-    if (messageId) {
-      queueMessage = await channel.messages.fetch(messageId);
-    }
-  } catch {}
-
-  if (!queueMessage) {
+  if (!compMessage) {
 
     const embed = new EmbedBuilder()
-      .setTitle("🎮 매칭 대기열")
-      .setDescription("버튼을 눌러 매칭에 참가하세요.");
+      .setTitle("🎮 경쟁 매칭")
+      .setDescription("버튼을 눌러 경쟁 매칭에 참가하세요");
 
-    queueMessage = await channel.send({
-      embeds: [embed],
-      components: [buttons]
+    compMessage = await compChannel.send({
+      embeds:[embed],
+      components:[compButtons]
     });
 
     fs.writeFileSync(
-      MESSAGE_FILE,
-      JSON.stringify({ messageId: queueMessage.id })
+      COMP_MESSAGE_FILE,
+      JSON.stringify({messageId:compMessage.id})
+    );
+
+  }
+
+  /* 일반 UI */
+
+  if (fs.existsSync(NORMAL_MESSAGE_FILE)) {
+
+    try {
+      const data = JSON.parse(fs.readFileSync(NORMAL_MESSAGE_FILE));
+      normalMessage = await normalChannel.messages.fetch(data.messageId);
+    } catch {}
+  }
+
+  if (!normalMessage) {
+
+    const embed = new EmbedBuilder()
+      .setTitle("🎯 일반 매칭")
+      .setDescription("버튼을 눌러 일반 매칭에 참가하세요");
+
+    normalMessage = await normalChannel.send({
+      embeds:[embed],
+      components:[normalButtons]
+    });
+
+    fs.writeFileSync(
+      NORMAL_MESSAGE_FILE,
+      JSON.stringify({messageId:normalMessage.id})
     );
 
   }
 
 });
 
-async function updateQueueUI(guild) {
+/* 진행바 */
 
-  let compList = "";
-  let normalList = "";
+function progressBar(count){
 
-  for (let i = 0; i < 4; i++) {
+  const filled = "█".repeat(count*2);
+  const empty = "░".repeat(8-count*2);
 
-    if (compQueue[i]) {
-      const member = await guild.members.fetch(compQueue[i]);
-      compList += `${i+1}. ${member.displayName}\n`;
-    } else compList += `${i+1}. -\n`;
-
-  }
-
-  for (let i = 0; i < 4; i++) {
-
-    if (normalQueue[i]) {
-      const member = await guild.members.fetch(normalQueue[i]);
-      normalList += `${i+1}. ${member.displayName}\n`;
-    } else normalList += `${i+1}. -\n`;
-
-  }
-
-  const embed = new EmbedBuilder()
-    .setTitle("🎮 매칭 대기열")
-    .addFields(
-      {
-        name: `🎮 경쟁 (${compQueue.length}/4)`,
-        value: "```"+compList+"```"
-      },
-      {
-        name: `🎯 일반 (${normalQueue.length}/4)`,
-        value: "```"+normalList+"```"
-      }
-    );
-
-  await queueMessage.edit({
-    embeds:[embed],
-    components:[buttons]
-  });
+  return filled+empty;
 
 }
 
+/* UI 업데이트 */
+
+async function updateQueueUI(guild){
+
+  let compList="";
+  let normalList="";
+
+  const icons=["🥇","🥈","🥉","🏅"];
+
+  for(let i=0;i<4;i++){
+
+    if(compQueue[i]){
+      const m = await guild.members.fetch(compQueue[i]);
+      compList+=`${icons[i]} ${m.displayName}\n`;
+    }else compList+="⬜ 대기중\n";
+
+  }
+
+  for(let i=0;i<4;i++){
+
+    if(normalQueue[i]){
+      const m = await guild.members.fetch(normalQueue[i]);
+      normalList+=`${icons[i]} ${m.displayName}\n`;
+    }else normalList+="⬜ 대기중\n";
+
+  }
+
+  const compEmbed = new EmbedBuilder()
+    .setTitle("🎮 경쟁 매칭")
+    .setDescription(`대기 인원 **${compQueue.length}/4**\n${progressBar(compQueue.length)}`)
+    .addFields({name:"대기열",value:"```"+compList+"```"});
+
+  const normalEmbed = new EmbedBuilder()
+    .setTitle("🎯 일반 매칭")
+    .setDescription(`대기 인원 **${normalQueue.length}/4**\n${progressBar(normalQueue.length)}`)
+    .addFields({name:"대기열",value:"```"+normalList+"```"});
+
+  await compMessage.edit({embeds:[compEmbed],components:[compButtons]});
+  await normalMessage.edit({embeds:[normalEmbed],components:[normalButtons]});
+
+}
+
+/* 버튼 */
+
 client.on("interactionCreate", async interaction => {
 
-  if (!interaction.isButton()) return;
+  if(!interaction.isButton()) return;
 
   const member = interaction.member;
 
-  if (interaction.customId === "join_comp") {
+  if(interaction.customId==="join_comp"){
 
-    if (!member.voice.channel || member.voice.channel.id !== COMP_WAIT)
+    if(!member.voice.channel || member.voice.channel.id!==COMP_WAIT)
       return interaction.reply({content:"경쟁대기 음성채널에 있어야 합니다.",ephemeral:true});
 
-    if (compQueue.includes(member.id))
+    if(compQueue.includes(member.id))
       return interaction.reply({content:"이미 경쟁 대기열에 있습니다.",ephemeral:true});
 
     compQueue.push(member.id);
@@ -170,17 +233,17 @@ client.on("interactionCreate", async interaction => {
 
     await updateQueueUI(interaction.guild);
 
-    if (compQueue.length === 4)
-      startMatch(interaction.guild, compQueue, COMP_ROOMS, "🎮 경쟁 매칭");
+    if(compQueue.length===4)
+      startMatch(interaction.guild,compQueue,COMP_ROOMS,"경쟁");
 
   }
 
-  if (interaction.customId === "join_normal") {
+  if(interaction.customId==="join_normal"){
 
-    if (!member.voice.channel || member.voice.channel.id !== NORMAL_WAIT)
+    if(!member.voice.channel || member.voice.channel.id!==NORMAL_WAIT)
       return interaction.reply({content:"일반대기 음성채널에 있어야 합니다.",ephemeral:true});
 
-    if (normalQueue.includes(member.id))
+    if(normalQueue.includes(member.id))
       return interaction.reply({content:"이미 일반 대기열에 있습니다.",ephemeral:true});
 
     normalQueue.push(member.id);
@@ -189,29 +252,31 @@ client.on("interactionCreate", async interaction => {
 
     await updateQueueUI(interaction.guild);
 
-    if (normalQueue.length === 4)
-      startMatch(interaction.guild, normalQueue, NORMAL_ROOMS, "🎯 일반 매칭");
+    if(normalQueue.length===4)
+      startMatch(interaction.guild,normalQueue,NORMAL_ROOMS,"일반");
 
   }
 
-  if (interaction.customId === "leave_queue") {
+  if(interaction.customId==="leave_queue"){
 
     compQueue = compQueue.filter(id=>id!==member.id);
     normalQueue = normalQueue.filter(id=>id!==member.id);
 
     await interaction.reply({content:"대기열에서 제거되었습니다.",ephemeral:true});
 
-    await updateQueueUI(interaction.guild);
+    updateQueueUI(interaction.guild);
 
   }
 
 });
 
-async function startMatch(guild, queue, rooms, title) {
+/* 매칭 */
+
+async function startMatch(guild,queue,rooms,type){
 
   const available = rooms.find(id=>{
-    const channel = guild.channels.cache.get(id);
-    return channel && channel.members.size===0;
+    const ch = guild.channels.cache.get(id);
+    return ch && ch.members.size===0;
   });
 
   if(!available){
@@ -222,26 +287,26 @@ async function startMatch(guild, queue, rooms, title) {
 
   const room = guild.channels.cache.get(available);
 
-  let playerList="";
+  let players="";
 
   for(const id of queue){
-    const member = await guild.members.fetch(id);
-    playerList+=`• ${member.displayName}\n`;
+    const m = await guild.members.fetch(id);
+    players+=`${m.displayName}\n`;
   }
 
   for(let i=5;i>0;i--){
 
     const embed = new EmbedBuilder()
-      .setTitle(title)
-      .setDescription(
-`매칭이 완료되었습니다.
+      .setTitle("🎮 매칭 완료")
+      .setDescription(`
+${players}
 
-${playerList}
+${i}초 후 ${type==="경쟁"?"경쟁방":"일반방"}으로 이동합니다
+`);
 
-${i}초 후 경쟁방으로 이동합니다`
-      );
+    const msg = type==="경쟁"?compMessage:normalMessage;
 
-    await queueMessage.edit({embeds:[embed],components:[]});
+    await msg.edit({embeds:[embed],components:[]});
 
     await new Promise(r=>setTimeout(r,1000));
 
@@ -258,11 +323,13 @@ ${i}초 후 경쟁방으로 이동합니다`
 
   queue.length=0;
 
-  await updateQueueUI(guild);
+  updateQueueUI(guild);
 
 }
 
-client.on("voiceStateUpdate",async(oldState,newState)=>{
+/* 음성채널 나가면 제거 */
+
+client.on("voiceStateUpdate",(oldState,newState)=>{
 
   if(oldState.channelId===COMP_WAIT && newState.channelId!==COMP_WAIT){
 
@@ -282,13 +349,10 @@ client.on("voiceStateUpdate",async(oldState,newState)=>{
 
 client.login(TOKEN);
 
-app.get("/", (req,res)=>{
-  res.send("Bot running");
-});
+/* 웹서버 */
+
+app.get("/",(req,res)=>res.send("Bot running"));
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, ()=>{
-  console.log("Server running");
-});
-  
+app.listen(PORT,()=>console.log("Server running"));
