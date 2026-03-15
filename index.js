@@ -57,8 +57,6 @@ const NORMAL_ROOMS = [
   "1461898047624581171"
 ];
 
-/* 대기열 */
-
 let compQueue = [];
 let normalQueue = [];
 
@@ -100,10 +98,7 @@ client.once("ready", async () => {
   const compChannel = await client.channels.fetch(COMP_MATCH_CHANNEL);
   const normalChannel = await client.channels.fetch(NORMAL_MATCH_CHANNEL);
 
-  /* 경쟁 UI */
-
   if (fs.existsSync(COMP_MESSAGE_FILE)) {
-
     try {
       const data = JSON.parse(fs.readFileSync(COMP_MESSAGE_FILE));
       compMessage = await compChannel.messages.fetch(data.messageId);
@@ -111,7 +106,6 @@ client.once("ready", async () => {
   }
 
   if (!compMessage) {
-
     const embed = new EmbedBuilder()
       .setTitle("🎮 경쟁 매칭")
       .setDescription("버튼을 눌러 경쟁 매칭에 참가하세요");
@@ -125,13 +119,9 @@ client.once("ready", async () => {
       COMP_MESSAGE_FILE,
       JSON.stringify({messageId:compMessage.id})
     );
-
   }
 
-  /* 일반 UI */
-
   if (fs.existsSync(NORMAL_MESSAGE_FILE)) {
-
     try {
       const data = JSON.parse(fs.readFileSync(NORMAL_MESSAGE_FILE));
       normalMessage = await normalChannel.messages.fetch(data.messageId);
@@ -139,7 +129,6 @@ client.once("ready", async () => {
   }
 
   if (!normalMessage) {
-
     const embed = new EmbedBuilder()
       .setTitle("🎯 일반 매칭")
       .setDescription("버튼을 눌러 일반 매칭에 참가하세요");
@@ -153,7 +142,6 @@ client.once("ready", async () => {
       NORMAL_MESSAGE_FILE,
       JSON.stringify({messageId:normalMessage.id})
     );
-
   }
 
 });
@@ -161,17 +149,16 @@ client.once("ready", async () => {
 /* 진행바 */
 
 function progressBar(count){
-
   const filled = "█".repeat(count*2);
   const empty = "░".repeat(8-count*2);
-
   return filled+empty;
-
 }
 
 /* UI 업데이트 */
 
 async function updateQueueUI(guild){
+
+  if(!compMessage || !normalMessage) return;
 
   let compList="";
   let normalList="";
@@ -179,21 +166,17 @@ async function updateQueueUI(guild){
   const icons=["🥇","🥈","🥉","🏅"];
 
   for(let i=0;i<4;i++){
-
     if(compQueue[i]){
       const m = await guild.members.fetch(compQueue[i]);
       compList+=`${icons[i]} ${m.displayName}\n`;
     }else compList+="⬜ 대기중\n";
-
   }
 
   for(let i=0;i<4;i++){
-
     if(normalQueue[i]){
       const m = await guild.members.fetch(normalQueue[i]);
       normalList+=`${icons[i]} ${m.displayName}\n`;
     }else normalList+="⬜ 대기중\n";
-
   }
 
   const compEmbed = new EmbedBuilder()
@@ -219,17 +202,22 @@ client.on("interactionCreate", async interaction => {
 
   const member = interaction.member;
 
+  await interaction.deferReply({ephemeral:true});
+
   if(interaction.customId==="join_comp"){
 
+    if(normalQueue.includes(member.id))
+      return interaction.editReply("이미 일반 매칭 대기열에 있습니다.");
+
     if(!member.voice.channel || member.voice.channel.id!==COMP_WAIT)
-      return interaction.reply({content:"경쟁대기 음성채널에 있어야 합니다.",ephemeral:true});
+      return interaction.editReply("경쟁대기 음성채널에 있어야 합니다.");
 
     if(compQueue.includes(member.id))
-      return interaction.reply({content:"이미 경쟁 대기열에 있습니다.",ephemeral:true});
+      return interaction.editReply("이미 경쟁 대기열에 있습니다.");
 
     compQueue.push(member.id);
 
-    await interaction.reply({content:"경쟁 대기열 참가 완료",ephemeral:true});
+    await interaction.editReply("경쟁 대기열 참가 완료");
 
     await updateQueueUI(interaction.guild);
 
@@ -240,15 +228,18 @@ client.on("interactionCreate", async interaction => {
 
   if(interaction.customId==="join_normal"){
 
+    if(compQueue.includes(member.id))
+      return interaction.editReply("이미 경쟁 매칭 대기열에 있습니다.");
+
     if(!member.voice.channel || member.voice.channel.id!==NORMAL_WAIT)
-      return interaction.reply({content:"일반대기 음성채널에 있어야 합니다.",ephemeral:true});
+      return interaction.editReply("일반대기 음성채널에 있어야 합니다.");
 
     if(normalQueue.includes(member.id))
-      return interaction.reply({content:"이미 일반 대기열에 있습니다.",ephemeral:true});
+      return interaction.editReply("이미 일반 대기열에 있습니다.");
 
     normalQueue.push(member.id);
 
-    await interaction.reply({content:"일반 대기열 참가 완료",ephemeral:true});
+    await interaction.editReply("일반 대기열 참가 완료");
 
     await updateQueueUI(interaction.guild);
 
@@ -262,7 +253,7 @@ client.on("interactionCreate", async interaction => {
     compQueue = compQueue.filter(id=>id!==member.id);
     normalQueue = normalQueue.filter(id=>id!==member.id);
 
-    await interaction.reply({content:"대기열에서 제거되었습니다.",ephemeral:true});
+    await interaction.editReply("대기열에서 제거되었습니다.");
 
     updateQueueUI(interaction.guild);
 
@@ -313,12 +304,9 @@ ${i}초 후 ${type==="경쟁"?"경쟁방":"일반방"}으로 이동합니다
   }
 
   for(const id of queue){
-
     const member = await guild.members.fetch(id);
-
     if(member.voice.channel)
       await member.voice.setChannel(room);
-
   }
 
   queue.length=0;
@@ -332,22 +320,33 @@ ${i}초 후 ${type==="경쟁"?"경쟁방":"일반방"}으로 이동합니다
 client.on("voiceStateUpdate",(oldState,newState)=>{
 
   if(oldState.channelId===COMP_WAIT && newState.channelId!==COMP_WAIT){
-
     compQueue = compQueue.filter(id=>id!==oldState.id);
     updateQueueUI(oldState.guild);
-
   }
 
   if(oldState.channelId===NORMAL_WAIT && newState.channelId!==NORMAL_WAIT){
-
     normalQueue = normalQueue.filter(id=>id!==oldState.id);
     updateQueueUI(oldState.guild);
-
   }
 
 });
 
+/* 자동 재연결 로그 */
+
+client.on("disconnect",()=>console.log("Discord 연결 끊김"));
+client.on("reconnecting",()=>console.log("Discord 재연결 시도중"));
+client.on("error",err=>console.error("Discord 오류:",err));
+
+process.on("unhandledRejection",err=>console.error("Unhandled:",err));
+process.on("uncaughtException",err=>console.error("Uncaught:",err));
+
 client.login(TOKEN);
+
+/* Railway sleep 방지 */
+
+setInterval(()=>{
+  console.log("Heartbeat");
+},300000);
 
 /* 웹서버 */
 
