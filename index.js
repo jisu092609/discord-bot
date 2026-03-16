@@ -22,7 +22,7 @@ const TOKEN = process.env.DISCORD_TOKEN;
 
 /* 로그 채널 */
 
-const LOG_CHANNEL = "여기에로그채널ID";
+const LOG_CHANNEL = "1483131260346831012";
 
 /* 채널 */
 
