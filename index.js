@@ -22,7 +22,7 @@ const TOKEN = process.env.DISCORD_TOKEN;
 
 /* 로그 채널 */
 
-const LOG_CHANNEL = "로그채널ID";
+const LOG_CHANNEL = "여기에로그채널ID";
 
 /* 채널 */
 
@@ -76,9 +76,9 @@ function sendLog(text){
   const ch = client.channels.cache.get(LOG_CHANNEL);
   if(!ch) return;
 
-  const time = new Date().toLocaleString("ko-KR");
+  const time = new Date().toLocaleString("ko-KR",{timeZone:"Asia/Seoul"});
 
-  ch.send(`📊 **매칭 로그**\n${text}\n🕒 ${time}`);
+  ch.send(`📊 매칭 로그\n${text}\n🕒 ${time}`);
 }
 
 /* 버튼 */
@@ -250,7 +250,7 @@ client.on("interactionCreate", async interaction => {
 
     compQueue.push(member.id);
 
-    sendLog(`${member.user.tag} 경쟁 대기열 참가 (${compQueue.length}/4)`);
+    sendLog(`${member.displayName} 경쟁 대기열 참가 (${compQueue.length}/4)`);
 
     await interaction.editReply("경쟁 대기열 참가 완료");
 
@@ -274,7 +274,7 @@ client.on("interactionCreate", async interaction => {
 
     normalQueue.push(member.id);
 
-    sendLog(`${member.user.tag} 일반 대기열 참가 (${normalQueue.length}/4)`);
+    sendLog(`${member.displayName} 일반 대기열 참가 (${normalQueue.length}/4)`);
 
     await interaction.editReply("일반 대기열 참가 완료");
 
@@ -290,7 +290,7 @@ client.on("interactionCreate", async interaction => {
     compQueue = compQueue.filter(id=>id!==member.id);
     normalQueue = normalQueue.filter(id=>id!==member.id);
 
-    sendLog(`${member.user.tag} 대기열 취소`);
+    sendLog(`${member.displayName} 대기열 취소`);
 
     await interaction.editReply("대기열에서 제거되었습니다.");
 
@@ -358,7 +358,7 @@ client.on("voiceStateUpdate",(oldState,newState)=>{
 
     compQueue = compQueue.filter(id=>id!==oldState.id);
 
-    sendLog(`${oldState.member.user.tag} 경쟁 대기열 이탈`);
+    sendLog(`${oldState.member.displayName} 경쟁 대기열 이탈 (음성채널 나감)`);
 
     updateQueueUI(oldState.guild);
 
@@ -368,7 +368,7 @@ client.on("voiceStateUpdate",(oldState,newState)=>{
 
     normalQueue = normalQueue.filter(id=>id!==oldState.id);
 
-    sendLog(`${oldState.member.user.tag} 일반 대기열 이탈`);
+    sendLog(`${oldState.member.displayName} 일반 대기열 이탈 (음성채널 나감)`);
 
     updateQueueUI(oldState.guild);
 
