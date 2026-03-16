@@ -20,6 +20,10 @@ const client = new Client({
 
 const TOKEN = process.env.DISCORD_TOKEN;
 
+/* 로그 채널 */
+
+const LOG_CHANNEL = "1483131260346831012";
+
 /* 채널 ID */
 
 const COMP_MATCH_CHANNEL = "1482370321032937584";
@@ -62,6 +66,18 @@ let normalQueue = [];
 
 let compMessage = null;
 let normalMessage = null;
+
+/* 로그 함수 */
+
+function sendLog(text){
+
+  const ch = client.channels.cache.get(LOG_CHANNEL);
+  if(!ch) return;
+
+  const time = new Date().toLocaleString("ko-KR");
+
+  ch.send(`📊 **매칭 로그**\n${text}\n🕒 ${time}`);
+}
 
 /* 버튼 */
 
@@ -202,20 +218,15 @@ client.on("interactionCreate", async interaction => {
 
   const member = interaction.member;
 
+  sendLog(`버튼 클릭 : ${member.user.tag}`);
+
   await interaction.deferReply({ephemeral:true});
 
   if(interaction.customId==="join_comp"){
 
-    if(normalQueue.includes(member.id))
-      return interaction.editReply("이미 일반 매칭 대기열에 있습니다.");
-
-    if(!member.voice.channel || member.voice.channel.id!==COMP_WAIT)
-      return interaction.editReply("경쟁대기 음성채널에 있어야 합니다.");
-
-    if(compQueue.includes(member.id))
-      return interaction.editReply("이미 경쟁 대기열에 있습니다.");
-
     compQueue.push(member.id);
+
+    sendLog(`${member.user.tag} 경쟁 대기열 참가 (${compQueue.length}/4)`);
 
     await interaction.editReply("경쟁 대기열 참가 완료");
 
@@ -228,16 +239,9 @@ client.on("interactionCreate", async interaction => {
 
   if(interaction.customId==="join_normal"){
 
-    if(compQueue.includes(member.id))
-      return interaction.editReply("이미 경쟁 매칭 대기열에 있습니다.");
-
-    if(!member.voice.channel || member.voice.channel.id!==NORMAL_WAIT)
-      return interaction.editReply("일반대기 음성채널에 있어야 합니다.");
-
-    if(normalQueue.includes(member.id))
-      return interaction.editReply("이미 일반 대기열에 있습니다.");
-
     normalQueue.push(member.id);
+
+    sendLog(`${member.user.tag} 일반 대기열 참가 (${normalQueue.length}/4)`);
 
     await interaction.editReply("일반 대기열 참가 완료");
 
@@ -252,6 +256,8 @@ client.on("interactionCreate", async interaction => {
 
     compQueue = compQueue.filter(id=>id!==member.id);
     normalQueue = normalQueue.filter(id=>id!==member.id);
+
+    sendLog(`${member.user.tag} 대기열 취소`);
 
     await interaction.editReply("대기열에서 제거되었습니다.");
 
@@ -285,23 +291,7 @@ async function startMatch(guild,queue,rooms,type){
     players+=`${m.displayName}\n`;
   }
 
-  for(let i=5;i>0;i--){
-
-    const embed = new EmbedBuilder()
-      .setTitle("🎮 매칭 완료")
-      .setDescription(`
-${players}
-
-${i}초 후 ${type==="경쟁"?"경쟁방":"일반방"}으로 이동합니다
-`);
-
-    const msg = type==="경쟁"?compMessage:normalMessage;
-
-    await msg.edit({embeds:[embed],components:[]});
-
-    await new Promise(r=>setTimeout(r,1000));
-
-  }
+  sendLog(`매칭 시작 (${type})\n${players}\n방 : ${room.name}`);
 
   for(const id of queue){
     const member = await guild.members.fetch(id);
@@ -321,34 +311,23 @@ client.on("voiceStateUpdate",(oldState,newState)=>{
 
   if(oldState.channelId===COMP_WAIT && newState.channelId!==COMP_WAIT){
     compQueue = compQueue.filter(id=>id!==oldState.id);
+    sendLog(`${oldState.member.user.tag} 경쟁 대기열 이탈`);
     updateQueueUI(oldState.guild);
   }
 
   if(oldState.channelId===NORMAL_WAIT && newState.channelId!==NORMAL_WAIT){
     normalQueue = normalQueue.filter(id=>id!==oldState.id);
+    sendLog(`${oldState.member.user.tag} 일반 대기열 이탈`);
     updateQueueUI(oldState.guild);
   }
 
 });
 
-/* 자동 재연결 로그 */
-
-client.on("disconnect",()=>console.log("Discord 연결 끊김"));
-client.on("reconnecting",()=>console.log("Discord 재연결 시도중"));
-client.on("error",err=>console.error("Discord 오류:",err));
-
-process.on("unhandledRejection",err=>console.error("Unhandled:",err));
-process.on("uncaughtException",err=>console.error("Uncaught:",err));
-
 client.login(TOKEN);
 
-/* Railway sleep 방지 */
+/* Railway */
 
-setInterval(()=>{
-  console.log("Heartbeat");
-},300000);
-
-/* 웹서버 */
+setInterval(()=>console.log("Heartbeat"),300000);
 
 app.get("/",(req,res)=>res.send("Bot running"));
 
